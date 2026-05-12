@@ -23,7 +23,7 @@ LARANJA = (240, 140, 60)
 CINZA = (120, 120, 130)
 
 tela = pygame.display.set_mode((LARGURA, ALTURA))
-pygame.display.set_caption("Parkour Master")
+pygame.display.set_caption("πXEL RUN")
 clock = pygame.time.Clock()
 fonte = pygame.font.SysFont("arial", 24, bold=True)
 fonte_grande = pygame.font.SysFont("arial", 56, bold=True)
@@ -256,7 +256,7 @@ def tela_inicial():
                 return
 
         tela.fill(AZUL_ESCURO)
-        titulo = fonte_grande.render("PARKOUR MASTER", True, AMARELO)
+        titulo = fonte_grande.render("πXEL RUN", True, AMARELO)
         tela.blit(titulo, (LARGURA // 2 - titulo.get_width() // 2, 140))
 
         linhas = [
