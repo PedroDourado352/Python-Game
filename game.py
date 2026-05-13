@@ -1,5 +1,6 @@
 import math
 import sys
+import random
 
 import pygame
 
@@ -21,12 +22,75 @@ VERMELHO = (230, 80, 80)
 AMARELO = (250, 210, 80)
 LARANJA = (240, 140, 60)
 CINZA = (120, 120, 130)
+ROXO_NEON = (140, 0, 255)
+CIANO = (0, 210, 255)
+VERDE_NEON = (0, 255, 120)
+ROSA_NEON = (255, 50, 180)
+
+CORES_GLITCH = [CIANO, ROXO_NEON, VERDE_NEON, ROSA_NEON, AMARELO]
+FORMULAS = ["π", "Σ", "√2", "∫", "∂", "∞", "x²", "λ", "Δ", "θ", "f(x)", "n!"]
 
 tela = pygame.display.set_mode((LARGURA, ALTURA))
 pygame.display.set_caption("πXEL RUN")
 clock = pygame.time.Clock()
 fonte = pygame.font.SysFont("arial", 24, bold=True)
 fonte_grande = pygame.font.SysFont("arial", 56, bold=True)
+fonte_formula = pygame.font.SysFont("arial", 13, bold=True)
+
+
+class Particula:
+    def __init__(self, x, y, tipo):
+        self.x = float(x)
+        self.y = float(y)
+        self.tipo = tipo
+
+        if tipo == "triangulo":
+            self.vel_x = random.uniform(-1.2, 1.2)
+            self.vel_y = random.uniform(-1.8, -0.4)
+            self.vida = random.randint(16, 26)
+            self.vida_max = self.vida
+            self.tamanho = random.randint(4, 9)
+            self.cor = random.choice(CORES_GLITCH)
+
+        elif tipo == "formula":
+            self.vel_x = random.uniform(-0.7, 0.7)
+            self.vel_y = random.uniform(-2.8, -1.2)
+            self.vida = random.randint(40, 65)
+            self.vida_max = self.vida
+            self.texto = random.choice(FORMULAS)
+            self.cor = random.choice([CIANO, VERDE_NEON, AMARELO, BRANCO])
+
+        elif tipo == "pixel":
+            self.vel_x = random.uniform(-5, 5)
+            self.vel_y = random.uniform(-5, 1)
+            self.vida = random.randint(8, 22)
+            self.vida_max = self.vida
+            self.tamanho = random.randint(2, 5)
+            self.cor = random.choice(CORES_GLITCH)
+
+    def atualizar(self):
+        self.x += self.vel_x
+        self.y += self.vel_y
+        self.vida -= 1
+        if self.tipo == "pixel":
+            self.vel_y += 0.4
+
+    def desenhar(self, superficie, camera_x):
+        alpha = self.vida / self.vida_max
+        sx = int(self.x - camera_x)
+        sy = int(self.y)
+        cor = tuple(int(c * alpha) for c in self.cor)
+
+        if self.tipo == "triangulo":
+            s = self.tamanho
+            pygame.draw.polygon(superficie, cor, [(sx, sy - s), (sx - s, sy + s), (sx + s, sy + s)])
+
+        elif self.tipo == "formula":
+            txt = fonte_formula.render(self.texto, True, cor)
+            superficie.blit(txt, (sx, sy))
+
+        elif self.tipo == "pixel":
+            pygame.draw.rect(superficie, cor, (sx, sy, self.tamanho, self.tamanho))
 
 
 class Jogador:
@@ -42,7 +106,14 @@ class Jogador:
         self.mortes = 0
         self.olhando_direita = True
 
+        self.particulas = []
+        self.t = 0
+        self.glitch_timer = 0
+        self.glitch_dx = 0
+
     def resetar(self):
+        for _ in range(18):
+            self.particulas.append(Particula(self.rect.centerx, self.rect.centery, "pixel"))
         self.rect.x, self.rect.y = self.spawn
         self.vel_x = 0
         self.vel_y = 0
@@ -50,7 +121,9 @@ class Jogador:
         self.mortes += 1
 
     def atualizar(self, teclas, plataformas, perigos, meta):
+        self.t += 1
         self.vel_x = 0
+
         if teclas[pygame.K_LEFT] or teclas[pygame.K_a]:
             self.vel_x = -VELOCIDADE
             self.olhando_direita = False
@@ -83,6 +156,30 @@ class Jogador:
                     self.rect.top = p.rect.bottom
                     self.vel_y = 0
 
+        # Trail de triângulos ao se mover
+        if self.vel_x != 0 and self.t % 3 == 0:
+            px = self.rect.centerx - (12 if self.olhando_direita else -12)
+            py = self.rect.bottom - 10
+            self.particulas.append(Particula(px, py, "triangulo"))
+
+        # Glitch periódico + burst de pixels
+        if self.t % 90 == 0 or (random.random() < 0.006):
+            self.glitch_timer = random.randint(5, 12)
+            self.glitch_dx = random.randint(-10, 10)
+            for _ in range(12):
+                self.particulas.append(Particula(
+                    self.rect.centerx + random.randint(-10, 10),
+                    self.rect.centery + random.randint(-14, 14),
+                    "pixel",
+                ))
+
+        if self.glitch_timer > 0:
+            self.glitch_timer -= 1
+
+        self.particulas = [p for p in self.particulas if p.vida > 0]
+        for p in self.particulas:
+            p.atualizar()
+
         for perigo in perigos:
             if self.rect.colliderect(perigo):
                 self.resetar()
@@ -101,16 +198,122 @@ class Jogador:
         if self.pulos_restantes > 0:
             self.vel_y = FORCA_PULO
             self.pulos_restantes -= 1
+            # Fórmulas matemáticas aparecem ao pular
+            for _ in range(5):
+                self.particulas.append(Particula(
+                    self.rect.centerx + random.randint(-10, 10),
+                    self.rect.centery + random.randint(-10, 10),
+                    "formula",
+                ))
+
+    def _cor_ciclica(self, offset=0):
+        t = self.t * 0.05
+        r = int(127 + 127 * math.sin(t + offset))
+        g = int(127 + 127 * math.sin(t + offset + 2.1))
+        b = int(127 + 127 * math.sin(t + offset + 4.2))
+        return (r, g, b)
 
     def desenhar(self, superficie, camera_x):
+        # Partículas (atrás do personagem)
+        for p in self.particulas:
+            p.desenhar(superficie, camera_x)
+
         x = self.rect.x - camera_x
         y = self.rect.y
-        corpo = pygame.Rect(x, y, self.largura, self.altura)
-        pygame.draw.rect(superficie, LARANJA, corpo, border_radius=6)
-        pygame.draw.rect(superficie, PRETO, corpo, 2, border_radius=6)
-        olho_x = x + (22 if self.olhando_direita else 6)
-        pygame.draw.circle(superficie, BRANCO, (olho_x, y + 16), 4)
-        pygame.draw.circle(superficie, PRETO, (olho_x + (1 if self.olhando_direita else -1), y + 16), 2)
+        W = self.largura   # 32
+        H = self.altura    # 48
+        cx = x + W // 2
+
+        cor_vivo = self._cor_ciclica(0)
+        cor_accent = self._cor_ciclica(2.1)
+
+        # Cubos flutuando ao redor (Mestre da Geometria)
+        for i in range(3):
+            ang = self.t * 0.035 + i * (2 * math.pi / 3)
+            bx = cx + int(math.cos(ang) * 26)
+            by = y + H // 2 + int(math.sin(ang) * 16)
+            cube_cor = CORES_GLITCH[i % len(CORES_GLITCH)]
+            pygame.draw.rect(superficie, cube_cor, (bx - 4, by - 4, 8, 8))
+            pygame.draw.rect(superficie, BRANCO, (bx - 4, by - 4, 8, 8), 1)
+
+        # Glitch overlay (Glitch Player — faixa deslocada)
+        if self.glitch_timer > 0:
+            band_y = y + random.randint(4, H - 12)
+            band_h = random.randint(4, 10)
+            glitch_cor = random.choice(CORES_GLITCH)
+            glitch_surf = pygame.Surface((W + 4, band_h), pygame.SRCALPHA)
+            glitch_surf.fill((*glitch_cor, 140))
+            superficie.blit(glitch_surf, (x + self.glitch_dx - 2, band_y))
+
+        # ---- Desenhar personagem ----
+
+        # Pernas (Mestre da Geometria — forma geométrica)
+        pygame.draw.rect(superficie, (25, 15, 50), (x + 3, y + H - 11, 11, 11))
+        pygame.draw.rect(superficie, (25, 15, 50), (x + W - 14, y + H - 11, 11, 11))
+        pygame.draw.rect(superficie, cor_accent, (x + 5, y + H - 6, 7, 3))
+        pygame.draw.rect(superficie, cor_accent, (x + W - 12, y + H - 6, 7, 3))
+
+        # Corpo / moletom futurista (Hacker Matemático)
+        pygame.draw.rect(superficie, (55, 15, 95), (x + 1, y + 15, W - 2, H - 26))
+
+        # Diamante geométrico no peito (Mestre da Geometria)
+        ds = 8
+        pygame.draw.polygon(superficie, cor_vivo, [
+            (cx, y + 23 - ds),
+            (cx + ds, y + 23),
+            (cx, y + 23 + ds),
+            (cx - ds, y + 23),
+        ])
+        pygame.draw.polygon(superficie, BRANCO, [
+            (cx, y + 23 - ds),
+            (cx + ds, y + 23),
+            (cx, y + 23 + ds),
+            (cx - ds, y + 23),
+        ], 1)
+
+        # Bordas ciano do moletom (estilo tech)
+        pygame.draw.line(superficie, CIANO, (x + 1, y + 15), (x + 1, y + H - 11), 2)
+        pygame.draw.line(superficie, CIANO, (x + W - 1, y + 15), (x + W - 1, y + H - 11), 2)
+
+        # Triângulos decorativos laterais do moletom
+        pygame.draw.polygon(superficie, cor_accent, [
+            (x + 6, y + H - 22), (x + 1, y + H - 14), (x + 11, y + H - 14)
+        ])
+        pygame.draw.polygon(superficie, cor_accent, [
+            (x + W - 6, y + H - 22), (x + W - 11, y + H - 14), (x + W - 1, y + H - 14)
+        ])
+
+        # Hood lateral (fundo da capuz)
+        pygame.draw.rect(superficie, (45, 12, 75), (x, y + 5, W, 12))
+
+        # Cabeça (Hacker Matemático)
+        pygame.draw.rect(superficie, (28, 28, 58), (x + 5, y + 2, 22, 13))
+
+        # Pico da capuz (triângulo — Mestre da Geometria)
+        pygame.draw.polygon(superficie, (45, 12, 75), [
+            (cx, y - 7), (x + 7, y + 5), (x + W - 7, y + 5)
+        ])
+
+        # Redesenha cabeça por cima da capuz
+        pygame.draw.rect(superficie, (28, 28, 58), (x + 5, y + 2, 22, 13))
+
+        # Óculos digitais / visor (Hacker Matemático)
+        pygame.draw.rect(superficie, CIANO, (x + 7, y + 6, 7, 4))
+        pygame.draw.rect(superficie, CIANO, (x + 18, y + 6, 7, 4))
+        # Cor interna ciclica dos óculos (efeito de tela digital)
+        pygame.draw.rect(superficie, cor_vivo, (x + 8, y + 7, 5, 2))
+        pygame.draw.rect(superficie, cor_vivo, (x + 19, y + 7, 5, 2))
+
+        # Glitch corporal — partes do personagem em cores alternadas (Glitch Player)
+        if self.glitch_timer > 3:
+            glitch_body_cor = random.choice(CORES_GLITCH)
+            slice_y = y + random.randint(0, H - 8)
+            slice_h = random.randint(3, 7)
+            pygame.draw.rect(superficie, glitch_body_cor,
+                             (x + self.glitch_dx, slice_y, W, slice_h))
+
+        # Pescoço
+        pygame.draw.rect(superficie, (40, 18, 68), (x + 11, y + 15, 10, 4))
 
 
 class Plataforma:
@@ -306,7 +509,6 @@ def jogar():
     camera_x = 0
     t = 0
     inicio = pygame.time.get_ticks()
-    fim = None
 
     while True:
         for evento in pygame.event.get():
