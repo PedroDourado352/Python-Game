@@ -450,31 +450,84 @@ def desenhar_meta(superficie, rect, camera_x, t):
 
 
 def tela_inicial():
+    plataformas_bg, perigos_bg, meta_bg = criar_fase()
+    camera_x = 0.0
+    t = 0
+    FADE_DUR = 52
+    fade_timer = 0  # 0 = parado, >0 = fadeando para preto
+
     while True:
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-            if evento.type == pygame.KEYDOWN:
-                return
+            if evento.type == pygame.KEYDOWN and fade_timer == 0:
+                fade_timer = 1
 
-        tela.fill(AZUL_ESCURO)
-        titulo = fonte_grande.render("πXEL RUN", True, AMARELO)
-        tela.blit(titulo, (LARGURA // 2 - titulo.get_width() // 2, 140))
+        t += 1
+        for p in plataformas_bg:
+            if isinstance(p, PlataformaMovel):
+                p.atualizar()
 
-        linhas = [
-            "Use SETAS ou A/D para mover",
-            "ESPACO ou W para pular (pulo duplo disponivel)",
-            "Evite os espinhos e alcance a bandeira vermelha",
-            "",
-            "Pressione qualquer tecla para comecar",
-        ]
-        for i, linha in enumerate(linhas):
-            txt = fonte.render(linha, True, BRANCO)
-            tela.blit(txt, (LARGURA // 2 - txt.get_width() // 2, 260 + i * 32))
+        # Câmera auto-scroll com loop suave
+        camera_x += 1.4
+        if camera_x > 4200:
+            camera_x = 0.0
+
+        # Mundo do jogo como fundo
+        desenhar_fundo(tela, camera_x)
+        for p in plataformas_bg:
+            p.desenhar(tela, camera_x)
+        for perigo in perigos_bg:
+            desenhar_perigo(tela, perigo, camera_x)
+        desenhar_meta(tela, meta_bg, camera_x, t)
+
+        # Progresso do fade (0.0 = aguardando, 1.0 = preto total)
+        fade_prog = (fade_timer / FADE_DUR) if fade_timer > 0 else 0.0
+
+        # Overlay escuro sobre o jogo (fica mais escuro ao sair)
+        overlay_alpha = int(150 + 105 * fade_prog)
+        overlay = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
+        overlay.fill((5, 5, 20, overlay_alpha))
+        tela.blit(overlay, (0, 0))
+
+        # Alpha dos elementos do título (somem durante o fade)
+        elem_alpha = int(255 * (1.0 - fade_prog))
+
+        # Glow do título (cópias deslocadas em laranja)
+        for dx2, dy2 in [(-2, 0), (2, 0), (0, -2), (0, 2)]:
+            glow = fonte_grande.render("πXEL RUN", True, LARANJA)
+            glow.set_alpha(int(90 * (1.0 - fade_prog)))
+            tela.blit(glow, (LARGURA // 2 - glow.get_width() // 2 + dx2, 155 + dy2))
+
+        # Título principal
+        titulo_surf = fonte_grande.render("πXEL RUN", True, AMARELO)
+        titulo_surf.set_alpha(elem_alpha)
+        tela.blit(titulo_surf, (LARGURA // 2 - titulo_surf.get_width() // 2, 155))
+
+        # Subtítulo
+        sub = fonte.render("um jogo de plataforma matemático", True, CIANO)
+        sub.set_alpha(int(elem_alpha * 0.75))
+        tela.blit(sub, (LARGURA // 2 - sub.get_width() // 2, 228))
+
+        # "Pressione qualquer tecla" com pulso
+        pulse = int(190 + 65 * math.sin(t * 0.08))
+        prompt = fonte.render("Pressione qualquer tecla para começar", True, (pulse, pulse, pulse))
+        prompt.set_alpha(elem_alpha)
+        tela.blit(prompt, (LARGURA // 2 - prompt.get_width() // 2, 330))
+
+        # Controles (discretos)
+        hint = fonte.render("WASD / Setas — mover   |   ESPAÇO — pulo duplo", True, CINZA)
+        hint.set_alpha(int(elem_alpha * 0.65))
+        tela.blit(hint, (LARGURA // 2 - hint.get_width() // 2, 420))
 
         pygame.display.flip()
         clock.tick(FPS)
+
+        if fade_timer > 0:
+            fade_timer += 1
+            if fade_timer > FADE_DUR:
+                return
 
 
 def tela_vitoria(tempo, mortes):
@@ -509,6 +562,8 @@ def jogar():
     camera_x = 0
     t = 0
     inicio = pygame.time.get_ticks()
+    FADE_IN_DUR = 48
+    fade_in = FADE_IN_DUR  # conta regressiva: preto → transparente
 
     while True:
         for evento in pygame.event.get():
@@ -556,6 +611,14 @@ def jogar():
         tela.blit(hud1, (16, 12))
         tela.blit(hud2, (16, 40))
         tela.blit(hud3, (16, 68))
+
+        # Fade de entrada: preto → jogo
+        if fade_in > 0:
+            fade_surf = pygame.Surface((LARGURA, ALTURA))
+            fade_surf.fill((5, 5, 20))
+            fade_surf.set_alpha(int(255 * fade_in / FADE_IN_DUR))
+            tela.blit(fade_surf, (0, 0))
+            fade_in -= 1
 
         t += 1
         pygame.display.flip()
